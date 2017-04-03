@@ -1,0 +1,141 @@
+--[[
+Types:
+push  -- unload prev scene
+push_modal -- disable prev scene
+popup -- remove input from prev scene
+]]
+-- URL
+-- main:/router#script
+
+local hashes={
+	init=hash("init"),
+	disable=hash("disable"),
+	enable=hash("enable"),
+	final=hash("final"),
+	unload=hash("unload"),
+	proxy_loaded=hash("proxy_loaded"),
+	release_input_focus=hash("release_input_focus"),
+	change_scene=hash("change_scene"),
+	router_input=hash("router_input")
+}
+local loaded_scenes = {}
+local enabled_scenes = {}
+local scene_stack = {}
+
+local loading=false
+local loading_cb=nil
+local start_loading_time=0
+
+--HELP FUNCTIONS
+local function url_to_name(url)
+	assert(url,"url can't be nil")
+	assert(type(url)=="userdata" or type(url)=="string", "url must be string or userdata. Url type:"..type(url))
+	for k,v in pairs(scenes) do
+		if(v==url) then return k end
+	end	
+end
+
+local function get_url(name)
+	assert(name,"name can't be nil")
+	local url = scenes[name]
+	assert(url,"unknown scene:"..name)
+	return url
+end
+
+local function scene_controller_url(name)
+    return name .. ":/" .. "scene_controller#script"
+end
+
+--WORK WITH SCENES
+local function disable_scene(name)
+	local url = get_url(name)
+	if(enabled_scenes[name]) then 
+		msg.post(url, hashes.disable)
+		enabled_scenes[name]=false
+		print("scene:"..name .. " was disabled")
+	else
+		print("can't disable not enabled scene:" .. name)
+	end	
+end
+
+local function unload_scene(name)
+	local url = get_url(name)
+	if(loaded_scenes[name]) then
+		disable_scene(name)
+		msg.post(url, hashes.final)
+		msg.post(url, hashes.unload)
+		loaded_scene[name]=false
+		print("scene:"..name .." was unload")
+	else
+		print("can't unload not loading scene:"..name)
+	end
+end
+
+local function send_input(scene)
+	msg.post(scene_controller_url(scene.name),hashes.router_input,{input=scene.input})
+end	
+
+local function enable_scene(name)
+	local url = get_url(name)	
+	if(not enabled_scenes[name])then 
+		msg.post(url,hashes.enable)
+		enabled_scenes[name]=true
+		print("scene:" .. name .. " was enable")
+		send_input({name=name,input=nil})
+	else
+		print("scene:" .. name "was already enabled")	
+	end		
+end
+
+--add scene to top of stack. Then start loading
+local function load_scene(name,input)
+	assert(not loading,"can load while scene is loading")	
+	local url = get_url(name)
+	if(not loaded_scenes[name])then
+		msg.post(url, "async_load")
+		table.insert(scene_stack,1,{name=name,input=input})
+		loading=true
+		start_loading_time=os.clock()
+		print("start to load scene:"..name)
+	else
+		print("scene:"..name.." already loaded")
+	end	
+end
+
+local function load_or_enable(name,input)
+	assert(not loading,"can load while scene is loading")
+	if(not loaded_scenes[name])then
+		load_scene(name,input)
+	elseif(not enabled_scenes[name])then
+		enable_scene(name,input)
+	end	
+end	
+
+
+function init(self)
+	scenes=require("scenes.scenes")
+end
+
+function on_message(self, message_id, message, sender)
+	if(message_id == hashes.change_scene)then
+		if(loading)then
+			print("can't change scene while loading")
+			return
+		end	
+		local method=message.method or "push"
+		local input=message.input
+		if(method=="push")then
+			load_or_enable(message.scene,input)	
+		elseif(method=="push_modal")then
+			load_or_enable(message.scene,input)
+		else
+			print("unknow method:"..method)	
+		end
+	elseif(loading and message_id == hashes.proxy_loaded and get_url(scene_stack[1].name)==sender)then
+		loading=false
+		print("scene:"..url_to_name(sender).." load")
+		print("loading time:".. os.clock()-start_loading_time)
+		enable_scene(scene_stack[1].name)
+		
+	end
+end
