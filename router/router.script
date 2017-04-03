@@ -3,6 +3,7 @@ Types:
 push  -- unload prev scene
 push_modal -- disable prev scene
 popup -- remove input from prev scene
+back -- unload current
 ]]
 -- URL
 -- main:/router#script
@@ -114,6 +115,9 @@ end
 
 function init(self)
 	scenes=require("scenes.scenes")
+	local default_scene_name=scenes.default_scene_name
+	assert(default_scene_name,"default scene not specified")
+	msg.post(".",hashes.change_scene,{scene=default_scene_name})
 end
 
 function on_message(self, message_id, message, sender)
