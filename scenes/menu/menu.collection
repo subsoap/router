@@ -1,10 +1,10 @@
-name: "scene1"
+name: "menu"
 scale_along_z: 0
 embedded_instances {
   id: "gui"
   data: "components {\n"
   "  id: \"gui\"\n"
-  "  component: \"/scenes/scene1/scene1.gui\"\n"
+  "  component: \"/scenes/menu/menu.gui\"\n"
   "  position {\n"
   "    x: 0.0\n"
   "    y: 0.0\n"
@@ -39,7 +39,7 @@ embedded_instances {
   id: "scene_controller"
   data: "components {\n"
   "  id: \"script\"\n"
-  "  component: \"/scenes/scene1/scene_controller.script\"\n"
+  "  component: \"/scenes/menu/menu.script\"\n"
   "  position {\n"
   "    x: 0.0\n"
   "    y: 0.0\n"

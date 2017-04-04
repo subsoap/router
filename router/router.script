@@ -16,6 +16,7 @@ local hashes={
 	unload=hash("unload"),
 	proxy_loaded=hash("proxy_loaded"),
 	release_input_focus=hash("release_input_focus"),
+	acquire_input_focus=hash("acquire_input_focus"),
 	change_scene=hash("change_scene"),
 	router_input=hash("router_input")
 }
@@ -83,6 +84,7 @@ local function enable_scene(name)
 		enabled_scenes[name]=true
 		print("scene:" .. name .. " was enable")
 		send_input({name=name,input=nil})
+		msg.post(url,hashes.acquire_input_focus)
 	else
 		print("scene:" .. name "was already enabled")	
 	end		

@@ -7,9 +7,9 @@ local function create_url(name)
 end	
 
 
-M.scene1 = create_url("#scene1")
-M.scene2 = create_url("#scene2")
+M.menu = create_url("#menu")
+M.settings = create_url("#settings")
 
-M.default_scene_name = "scene1"
+M.default_scene_name = "menu"
 
 return M
