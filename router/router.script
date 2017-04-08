@@ -1,12 +1,22 @@
 --[[
-Types:
-push  -- unload prev scene
-push_modal -- disable prev scene
-popup -- remove input from prev scene
-back -- unload current
-]]
--- URL
--- main:/router#script
+Scene Router
+2017 d954mas
+This libary will help you to work with collection_proxy
+The main function
+change_scene - change current scene to new scene. Can be push or push modal.
+	push - pushes the new scene to the stack and passes the input to it. The current scene will be unloaded to save memory
+	push_modal - pushes the new scene to the stack and passes the input to it. The current scene is kept in memory but is disabled.
+back - return to prev scene.If only one scene in stack, will be ignore. The current scene will be unload if it was loading, or will be disabled.
+clear_stack - clear scene stack. Keep only top scene.
+-- URL: main:/router#script
+--]]
+local Stack=require("router.stack")
+
+local messages={
+	change_scene=hash("change_scene"), --change current scene to scene message.name
+	back=hash("back"), --go back to prev scene. Unload/disable current scene. If only one
+	clear_stack=hash("clear_stack") --clear_stack ex
+}
 
 local hashes={
 	init=hash("init"),
@@ -18,25 +28,27 @@ local hashes={
 	release_input_focus=hash("release_input_focus"),
 	acquire_input_focus=hash("acquire_input_focus"),
 	change_scene=hash("change_scene"),
-	router_input=hash("router_input")
+	router_input=hash("router_input"),
+	router_back_btn=hash("router_back_btn")
 }
-local loaded_scenes = {}
-local enabled_scenes = {}
-local scene_stack = {}
+local load_scenes = {}
+local enable_scenes = {}
+local stack = Stack.new() --scene={name,input}
 
 local loading=false
 local loading_cb=nil
 local start_loading_time=0
 
 --HELP FUNCTIONS
+--return scene name by url
 local function url_to_name(url)
 	assert(url,"url can't be nil")
 	assert(type(url)=="userdata" or type(url)=="string", "url must be string or userdata. Url type:"..type(url))
 	for k,v in pairs(scenes) do
 		if(v==url) then return k end
-	end	
+	end
 end
-
+--return scene url by name
 local function get_url(name)
 	assert(name,"name can't be nil")
 	local url = scenes[name]
@@ -44,104 +56,143 @@ local function get_url(name)
 	return url
 end
 
+--WILL BE USED LATER TO MAKE INPUT
+--return scene_controller url by name. For now url name is harcoded
 local function scene_controller_url(name)
+	assert(name,"name can't be nil")
     return name .. ":/" .. "scene_controller#script"
+end
+--send scene input to scene_controller
+local function send_input(scene)
+	msg.post(scene_controller_url(scene.name),hashes.router_input,{input=scene.input})
 end
 
 --WORK WITH SCENES
-local function disable_scene(name)
-	local url = get_url(name)
-	if(enabled_scenes[name]) then 
+--disable scene
+local function disable_scene(scene)
+	local url = get_url(scene.name)
+	if(enable_scenes[scene.name]) then
 		msg.post(url, hashes.disable)
-		enabled_scenes[name]=false
-		print("scene:"..name .. " was disabled")
+		enable_scenes[scene.name]=false
+		print("scene:"..scene.name .. " was disabled")
 	else
-		print("can't disable not enabled scene:" .. name)
-	end	
+		print("can't disable not enabled scene:" .. scene.name)
+	end
 end
-
-local function unload_scene(name)
-	local url = get_url(name)
-	if(loaded_scenes[name]) then
-		disable_scene(name)
+--unload scene
+local function unload_scene(scene)
+	local url = get_url(scene.name)
+	if(enable_scenes[scene.name])then
+		print("can't unload enabled scene")
+	elseif(load_scenes[scene.name]) then
 		msg.post(url, hashes.final)
 		msg.post(url, hashes.unload)
-		loaded_scene[name]=false
-		print("scene:"..name .." was unload")
+		load_scenes[scene.name]=false
+		print("scene:"..scene.name .." was unload")
 	else
-		print("can't unload not loading scene:"..name)
+		print("can't unload not loading scene:"..scene.name)
+	end
+end
+--enable scene
+local function enable_scene(scene)
+	local url = get_url(scene.name)
+	if(not enable_scenes[scene.name])then
+		msg.post(url,hashes.enable)
+		enable_scenes[scene.name]=true
+		print("scene:" .. scene.name .. " was enable")
+		msg.post(url,hashes.acquire_input_focus)
+	else
+		print("scene:" .. scene.name "was already enabled")
 	end
 end
 
-local function send_input(scene)
-	msg.post(scene_controller_url(scene.name),hashes.router_input,{input=scene.input})
-end	
-
-local function enable_scene(name)
-	local url = get_url(name)	
-	if(not enabled_scenes[name])then 
-		msg.post(url,hashes.enable)
-		enabled_scenes[name]=true
-		print("scene:" .. name .. " was enable")
-		send_input({name=name,input=nil})
-		msg.post(url,hashes.acquire_input_focus)
-	else
-		print("scene:" .. name "was already enabled")	
-	end		
-end
-
 --add scene to top of stack. Then start loading
-local function load_scene(name,input)
-	assert(not loading,"can load while scene is loading")	
-	local url = get_url(name)
-	if(not loaded_scenes[name])then
-		msg.post(url, "async_load")
-		table.insert(scene_stack,1,{name=name,input=input})
-		loading=true
-		start_loading_time=os.clock()
-		print("start to load scene:"..name)
-	else
-		print("scene:"..name.." already loaded")
-	end	
-end
-
-local function load_or_enable(name,input)
+local function start_scene_loading(scene,cb)
 	assert(not loading,"can load while scene is loading")
-	if(not loaded_scenes[name])then
-		load_scene(name,input)
-	elseif(not enabled_scenes[name])then
-		enable_scene(name,input)
-	end	
-end	
-
+	local url = get_url(scene.name)
+	if(not load_scenes[scene.name])then
+		msg.post(url, "async_load")
+		loading=true
+		loading_cb=cb
+		start_loading_time=os.clock()
+		print("start to load scene:"..scene.name)
+	else
+		print("scene:"..scene.name.." already loaded")
+	end
+end
 
 function init(self)
+	msg.post(".","acquire_input_focus")
 	scenes=require("scenes.scenes")
 	local default_scene_name=scenes.default_scene_name
 	assert(default_scene_name,"default scene not specified")
 	msg.post(".",hashes.change_scene,{scene=default_scene_name})
 end
 
+local function change_scene(message)
+	if(loading)then print("can't change scene while loading") return end
+	method=message.method or "push_modal"
+	if(not(method=="push" or method=="push_modal")) then print("unknown method:"..method) return end
+	local scene={name=message.scene,input=message.input,loading=not load_scenes[message.name],enabling=not enable_scenes[message.name]}
+	local prev_scene=stack:peek()
+	stack:push(scene)
+	local loading_cb=function()
+			enable_scene(scene)
+			if(prev_scene~=nil) then
+				disable_scene(prev_scene)
+				if(method=="push")then unload_scene(prev_scene) end
+			else
+				print("no prev scene")
+			end
+	end
+	if(scene.loading)then
+		start_scene_loading(scene, loading_cb)
+	else
+		loading_cb()
+	end
+end
+
+local function back()
+	if(loading)then print("can't change scene while loading") return end
+	if(stack:size()<=1)then print("can't go back. No scenes in stack") return end
+	local scene=stack:pop()
+	local prev_scene=stack:peek()
+	local loading_cb=function()
+			enable_scene(prev_scene)
+			disable_scene(scene)
+			if(scene.loading) then unload_scene(scene) end
+	end
+	if(not load_scenes[prev_scene.name])then
+		start_scene_loading(prev_scene, loading_cb)
+	else
+		loading_cb()
+	end
+end
+
+local function clear_stack()
+	while stack:size()>1 do stack:pop() end
+end
+
+function final(self)
+	msg.post(".", "release_input_focus")
+end
+
+function on_input(self, action_id, action)
+	if(action_id==hashes.router_back_btn and action.pressed)then
+		back()
+	end
+end
+
 function on_message(self, message_id, message, sender)
-	if(message_id == hashes.change_scene)then
-		if(loading)then
-			print("can't change scene while loading")
-			return
-		end	
-		local method=message.method or "push"
-		local input=message.input
-		if(method=="push")then
-			load_or_enable(message.scene,input)	
-		elseif(method=="push_modal")then
-			load_or_enable(message.scene,input)
-		else
-			print("unknow method:"..method)	
-		end
-	elseif(loading and message_id == hashes.proxy_loaded and get_url(scene_stack[1].name)==sender)then
+	if(message_id == messages.change_scene) then change_scene(message)
+	elseif(message_id == messages.back)	then back()
+	elseif(message_id == messages.clear_stack) then clear_stack()
+	elseif(loading and message_id == hashes.proxy_loaded and get_url(stack:peek().name)==sender)then
 		loading=false
+		load_scenes[url_to_name(sender)]=true
 		print("scene:"..url_to_name(sender).." load")
 		print("loading time:".. os.clock()-start_loading_time)
-		enable_scene(scene_stack[1].name)
-		
+		loading_cb()
+		loading_cb=nil
 	end
 end
